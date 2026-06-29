@@ -1,0 +1,17 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN "subtotal" DECIMAL(12,2),
+ADD COLUMN "shippingCost" DECIMAL(12,2),
+ADD COLUMN "shippingMethod" TEXT,
+ADD COLUMN "discount" DECIMAL(12,2),
+ADD COLUMN "totalPaidByCustomer" DECIMAL(12,2),
+ADD COLUMN "processingFee" DECIMAL(12,2),
+ADD COLUMN "installmentsFee" DECIMAL(12,2),
+ADD COLUMN "netTotal" DECIMAL(12,2),
+ADD COLUMN "currency" TEXT,
+ADD COLUMN "paymentMethod" TEXT,
+ADD COLUMN "paymentGateway" TEXT,
+ADD COLUMN "cardBrand" TEXT,
+ADD COLUMN "cardLastDigits" TEXT,
+ADD COLUMN "installments" INTEGER,
+ADD COLUMN "installmentsInterestFree" BOOLEAN,
+ADD COLUMN "transactionId" TEXT;

@@ -34,17 +34,33 @@ model Product {
 }
 
 model Order {
-  id            String      @id @default(cuid())
-  orderId       String
-  storeId       String
-  customerName  String?
-  total         Decimal     @db.Decimal(12, 2)
-  paymentStatus String
-  orderDate     DateTime
-  source        String      @default("tiendanube")
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  items         OrderItem[]
+  id                         String      @id @default(cuid())
+  orderId                    String
+  storeId                    String
+  customerName               String?
+  subtotal                   Decimal?    @db.Decimal(12, 2)
+  shippingCost               Decimal?    @db.Decimal(12, 2)
+  shippingMethod             String?
+  discount                   Decimal?    @db.Decimal(12, 2)
+  total                      Decimal     @db.Decimal(12, 2)
+  totalPaidByCustomer        Decimal?    @db.Decimal(12, 2)
+  processingFee              Decimal?    @db.Decimal(12, 2)
+  installmentsFee            Decimal?    @db.Decimal(12, 2)
+  netTotal                   Decimal?    @db.Decimal(12, 2)
+  currency                   String?
+  paymentMethod              String?
+  paymentGateway             String?
+  cardBrand                  String?
+  cardLastDigits             String?
+  installments               Int?
+  installmentsInterestFree   Boolean?
+  transactionId              String?
+  paymentStatus              String
+  orderDate                  DateTime
+  source                     String      @default("tiendanube")
+  createdAt                  DateTime    @default(now())
+  updatedAt                  DateTime    @updatedAt
+  items                      OrderItem[]
 
   @@unique([storeId, orderId])
   @@index([storeId])

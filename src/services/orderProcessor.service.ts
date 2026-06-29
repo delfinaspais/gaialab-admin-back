@@ -1,5 +1,7 @@
 import { prisma } from "../lib/prisma";
+import { mapOrderPaymentData } from "./orderPayment.mapper";
 import { fetchOrder, fetchVariantSku } from "./tiendanube/order.service";
+import { fetchOrderTransactions } from "./tiendanube/transaction.service";
 import type { TiendanubeOrder, TiendanubeOrderProduct } from "../types/tiendanube";
 
 function toStringId(value: string | number): string {
@@ -93,13 +95,35 @@ export async function processPaidOrder(storeId: string, orderId: string): Promis
   }
 
   const order = await fetchOrder(storeIdStr, credential.accessToken, orderIdStr);
+  const transactions = await fetchOrderTransactions(
+    storeIdStr,
+    credential.accessToken,
+    orderIdStr
+  );
+  const payment = mapOrderPaymentData(order, transactions);
 
   await prisma.order.create({
     data: {
       orderId: orderIdStr,
       storeId: storeIdStr,
       customerName: resolveCustomerName(order),
+      subtotal: payment.subtotal,
+      shippingCost: payment.shippingCost,
+      shippingMethod: payment.shippingMethod,
+      discount: payment.discount,
       total: toDecimalString(order.total),
+      totalPaidByCustomer: payment.totalPaidByCustomer,
+      processingFee: payment.processingFee,
+      installmentsFee: payment.installmentsFee,
+      netTotal: payment.netTotal,
+      currency: payment.currency,
+      paymentMethod: payment.paymentMethod,
+      paymentGateway: payment.paymentGateway,
+      cardBrand: payment.cardBrand,
+      cardLastDigits: payment.cardLastDigits,
+      installments: payment.installments,
+      installmentsInterestFree: payment.installmentsInterestFree,
+      transactionId: payment.transactionId,
       paymentStatus: order.payment_status,
       orderDate: new Date(order.paid_at ?? order.created_at),
       source: "tiendanube",
