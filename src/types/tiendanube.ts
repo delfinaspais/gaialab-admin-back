@@ -65,3 +65,12 @@ export type TiendanubeTokenResponse = z.infer<typeof tiendanubeTokenResponseSche
 export type TiendanubeWebhookPayload = z.infer<typeof tiendanubeWebhookPayloadSchema>;
 export type TiendanubeOrder = z.infer<typeof tiendanubeOrderSchema>;
 export type TiendanubeOrderProduct = z.infer<typeof tiendanubeOrderProductSchema>;
+
+export const tiendanubeOrderListItemSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  payment_status: z.string().optional(),
+});
+
+export const tiendanubeOrderListSchema = z.array(tiendanubeOrderListItemSchema);
+
+export type TiendanubeOrderListItem = z.infer<typeof tiendanubeOrderListItemSchema>;
