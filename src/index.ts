@@ -1,9 +1,11 @@
 import "dotenv/config";
+import { getEnv } from "./config/env";
 import express from "express";
 import routes from "./routes";
 import webhookRoutes from "./routes/webhook.routes";
 import { errorHandler } from "./middleware/errorHandler";
-import { env } from "./config/env";
+
+const env = getEnv();
 
 const app = express();
 
