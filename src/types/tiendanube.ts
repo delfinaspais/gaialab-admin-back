@@ -19,7 +19,7 @@ export const tiendanubeOrderProductSchema = z.object({
   variant_id: z.union([z.string(), z.number()]),
   name: z.string(),
   price: z.union([z.string(), z.number()]),
-  quantity: z.number(),
+  quantity: z.coerce.number(),
   sku: z.string().nullable().optional(),
 });
 
