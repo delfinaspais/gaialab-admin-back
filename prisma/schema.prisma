@@ -78,6 +78,7 @@ model OrderItem {
   variantId String
   sku       String?
   name      String
+  categoria String?
   quantity  Int
   price     Decimal @db.Decimal(12, 2)
 
