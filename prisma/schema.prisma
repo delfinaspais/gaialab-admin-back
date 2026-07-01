@@ -43,6 +43,7 @@ model Order {
   customerName               String?
   subtotal                   Decimal?    @db.Decimal(12, 2)
   shippingCost               Decimal?    @db.Decimal(12, 2)
+  shippingCostOwner          Decimal?    @db.Decimal(12, 2)
   shippingMethod             String?
   discount                   Decimal?    @db.Decimal(12, 2)
   total                      Decimal     @db.Decimal(12, 2)

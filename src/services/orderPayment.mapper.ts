@@ -60,6 +60,7 @@ function formatPaymentMethod(order: TiendanubeOrder, transaction?: TiendanubeTra
 export interface OrderPaymentData {
   subtotal: string | null;
   shippingCost: string | null;
+  shippingCostOwner: string | null;
   shippingMethod: string | null;
   discount: string | null;
   totalPaidByCustomer: string | null;
@@ -120,6 +121,7 @@ export function mapOrderPaymentData(
   return {
     subtotal: toDecimalString(order.subtotal),
     shippingCost: toDecimalString(order.shipping_cost_customer),
+    shippingCostOwner: toDecimalString(order.shipping_cost_owner),
     shippingMethod: order.shipping_option ?? null,
     discount: toDecimalString(order.discount),
     totalPaidByCustomer: totalPaid,

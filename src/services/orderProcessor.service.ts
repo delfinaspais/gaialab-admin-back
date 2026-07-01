@@ -53,6 +53,7 @@ function buildOrderPaymentFields(order: TiendanubeOrder, payment: OrderPaymentDa
     customerName: resolveCustomerName(order),
     subtotal: payment.subtotal,
     shippingCost: payment.shippingCost,
+    shippingCostOwner: payment.shippingCostOwner,
     shippingMethod: payment.shippingMethod,
     discount: payment.discount,
     total: toDecimalString(order.total),

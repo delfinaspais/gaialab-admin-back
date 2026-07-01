@@ -49,6 +49,21 @@ export interface SaleItemDetail {
   sku: string | null;
 }
 
+export interface SalePaymentDetail {
+  subtotal: string | null;
+  costoEnvio: string | null;
+  metodoEnvio: string | null;
+  totalPagadoCliente: string | null;
+  costoProcesamiento: string | null;
+  costoCuotas: string | null;
+  totalNeto: string | null;
+  installments: number | null;
+  installmentsInterestFree: boolean | null;
+  cardBrand: string | null;
+  cardLastDigits: string | null;
+  transactionId: string | null;
+}
+
 export interface SaleSummary {
   id: string;
   orderId: string;
@@ -69,6 +84,7 @@ export interface SaleSummary {
   currency: string | null;
   paymentMethod: string | null;
   paymentGateway: string | null;
+  pago: SalePaymentDetail | null;
   items: SaleItemDetail[];
 }
 
@@ -133,6 +149,40 @@ function buildItemDetail(
   };
 }
 
+function buildTiendanubePaymentDetail(order: {
+  subtotal: { toString(): string } | null;
+  shippingCost: { toString(): string } | null;
+  shippingCostOwner: { toString(): string } | null;
+  shippingMethod: string | null;
+  totalPaidByCustomer: { toString(): string } | null;
+  processingFee: { toString(): string } | null;
+  installmentsFee: { toString(): string } | null;
+  netTotal: { toString(): string } | null;
+  installments: number | null;
+  installmentsInterestFree: boolean | null;
+  cardBrand: string | null;
+  cardLastDigits: string | null;
+  transactionId: string | null;
+}): SalePaymentDetail {
+  const costoEnvio =
+    order.shippingCostOwner?.toString() ?? order.shippingCost?.toString() ?? null;
+
+  return {
+    subtotal: order.subtotal?.toString() ?? null,
+    costoEnvio,
+    metodoEnvio: order.shippingMethod,
+    totalPagadoCliente: order.totalPaidByCustomer?.toString() ?? null,
+    costoProcesamiento: order.processingFee?.toString() ?? null,
+    costoCuotas: order.installmentsFee?.toString() ?? null,
+    totalNeto: order.netTotal?.toString() ?? null,
+    installments: order.installments,
+    installmentsInterestFree: order.installmentsInterestFree,
+    cardBrand: order.cardBrand,
+    cardLastDigits: order.cardLastDigits,
+    transactionId: order.transactionId,
+  };
+}
+
 function buildSaleSummary(
   order: {
     id: string;
@@ -140,8 +190,21 @@ function buildSaleSummary(
     orderDate: Date;
     source: string;
     customerName: string | null;
+    subtotal: { toString(): string } | null;
+    shippingCost: { toString(): string } | null;
+    shippingCostOwner: { toString(): string } | null;
+    shippingMethod: string | null;
     discount: { toString(): string } | null;
     total: { toString(): string };
+    totalPaidByCustomer: { toString(): string } | null;
+    processingFee: { toString(): string } | null;
+    installmentsFee: { toString(): string } | null;
+    netTotal: { toString(): string } | null;
+    installments: number | null;
+    installmentsInterestFree: boolean | null;
+    cardBrand: string | null;
+    cardLastDigits: string | null;
+    transactionId: string | null;
     currency: string | null;
     paymentStatus: string;
     paymentMethod: string | null;
@@ -165,18 +228,29 @@ function buildSaleSummary(
     return buildItemDetail(item, product);
   });
 
-  const ingresoBruto = items.reduce((sum, item) => sum + parseFloat(item.ingresoBruto), 0);
+  const ingresoItems = items.reduce((sum, item) => sum + parseFloat(item.ingresoBruto), 0);
   const costoVariableTotal = items.every((item) => item.costoVariableTotal !== null)
     ? items.reduce((sum, item) => sum + parseFloat(item.costoVariableTotal!), 0)
     : null;
-  const margenBruto =
-    costoVariableTotal !== null ? ingresoBruto - costoVariableTotal : null;
-  const margenPorcentaje =
-    margenBruto !== null && ingresoBruto > 0 ? (margenBruto / ingresoBruto) * 100 : null;
 
+  const isTiendanube = order.source === "tiendanube";
+  const pago = isTiendanube ? buildTiendanubePaymentDetail(order) : null;
+
+  const totalPagado = toNumber(order.totalPaidByCustomer) ?? toNumber(order.total);
+  const ingresoBruto = isTiendanube && totalPagado !== null ? totalPagado : ingresoItems;
+
+  const netTotal = toNumber(order.netTotal);
   const descuentoOrden = order.discount?.toString() ?? null;
   const descuento = descuentoOrden ? parseFloat(descuentoOrden) : 0;
-  const ingresoNeto = Math.max(ingresoBruto - descuento, 0);
+  const ingresoNeto =
+    isTiendanube && netTotal !== null
+      ? netTotal
+      : Math.max(ingresoBruto - descuento, 0);
+
+  const margenBruto =
+    costoVariableTotal !== null ? ingresoNeto - costoVariableTotal : null;
+  const margenPorcentaje =
+    margenBruto !== null && ingresoNeto > 0 ? (margenBruto / ingresoNeto) * 100 : null;
 
   return {
     id: order.id,
@@ -198,6 +272,7 @@ function buildSaleSummary(
     currency: order.currency,
     paymentMethod: order.paymentMethod,
     paymentGateway: order.paymentGateway,
+    pago,
     items,
   };
 }

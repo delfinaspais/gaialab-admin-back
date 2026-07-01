@@ -38,6 +38,7 @@ export const tiendanubeOrderSchema = z.object({
   subtotal: z.union([z.string(), z.number()]).optional(),
   discount: z.union([z.string(), z.number()]).optional(),
   shipping_cost_customer: z.union([z.string(), z.number()]).optional(),
+  shipping_cost_owner: z.union([z.string(), z.number()]).optional(),
   shipping_option: z.string().nullable().optional(),
   total: z.union([z.string(), z.number()]),
   total_paid_by_customer: z.union([z.string(), z.number()]).optional(),
