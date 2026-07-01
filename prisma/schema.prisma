@@ -36,6 +36,20 @@ model Product {
   @@index([status])
 }
 
+model PersonalProduct {
+  id            String   @id @default(cuid())
+  name          String
+  categoria     String?
+  costoUnitario Decimal? @db.Decimal(12, 2)
+  precioVenta   Decimal? @db.Decimal(12, 2)
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([name])
+  @@index([activo])
+}
+
 model Order {
   id                         String      @id @default(cuid())
   orderId                    String

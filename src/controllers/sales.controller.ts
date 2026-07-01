@@ -8,13 +8,18 @@ import {
 
 const canalSchema = z.enum(["tiendanube", "personal", "all"]);
 
-const personalSaleItemSchema = z.object({
-  producto: z.string().min(1),
-  categoria: z.string().optional(),
-  cantidad: z.number().positive(),
-  precioUnitario: z.number().nonnegative(),
-  costoUnitario: z.number().nonnegative().optional(),
-});
+const personalSaleItemSchema = z
+  .object({
+    productoId: z.string().min(1).optional(),
+    producto: z.string().min(1).optional(),
+    categoria: z.string().optional(),
+    cantidad: z.number().positive(),
+    precioUnitario: z.number().nonnegative(),
+    costoUnitario: z.number().nonnegative().optional(),
+  })
+  .refine((item) => item.productoId || item.producto, {
+    message: "Each item must include productoId or producto",
+  });
 
 const personalSaleSchema = z.object({
   fecha: z.string().min(1),

@@ -1,5 +1,8 @@
-import { randomUUID } from "crypto";
 import { prisma } from "../lib/prisma";
+import {
+  personalProductVariantId,
+  resolvePersonalProductForSale,
+} from "./personalProduct.service";
 
 const PERSONAL_STORE_ID = "personal";
 
@@ -94,7 +97,8 @@ export interface ListSalesFilters {
 }
 
 export interface PersonalSaleItemInput {
-  producto: string;
+  productoId?: string;
+  producto?: string;
   categoria?: string;
   cantidad: number;
   precioUnitario: number;
@@ -306,6 +310,7 @@ export async function listSales(filters?: ListSalesFilters): Promise<SaleSummary
   });
 
   const products = await prisma.product.findMany();
+  const personalProducts = await prisma.personalProduct.findMany();
   const productByVariant = new Map(
     products.map((product) => [
       `${product.storeId}:${product.variantId}`,
@@ -316,6 +321,17 @@ export async function listSales(filters?: ListSalesFilters): Promise<SaleSummary
       },
     ])
   );
+
+  for (const personalProduct of personalProducts) {
+    productByVariant.set(
+      `${PERSONAL_STORE_ID}:${personalProductVariantId(personalProduct.id)}`,
+      {
+        costoUnitario: personalProduct.costoUnitario,
+        categoria: personalProduct.categoria,
+        sku: null,
+      }
+    );
+  }
 
   return orders.map((order) => buildSaleSummary(order, productByVariant));
 }
@@ -352,42 +368,14 @@ export async function createPersonalSale(input: CreatePersonalSaleInput): Promis
       items: {
         create: await Promise.all(
           input.items.map(async (item) => {
-            const variantId = `manual-${randomUUID()}`;
-
-            if (item.costoUnitario !== undefined) {
-              await prisma.product.upsert({
-                where: {
-                  storeId_variantId: {
-                    storeId: PERSONAL_STORE_ID,
-                    variantId,
-                  },
-                },
-                create: {
-                  storeId: PERSONAL_STORE_ID,
-                  productId: "manual",
-                  variantId,
-                  name: item.producto,
-                  categoria: item.categoria ?? null,
-                  costoUnitario: item.costoUnitario,
-                  precioVenta: item.precioUnitario.toFixed(2),
-                  activo: true,
-                  status: "active",
-                },
-                update: {
-                  name: item.producto,
-                  categoria: item.categoria ?? null,
-                  costoUnitario: item.costoUnitario,
-                  precioVenta: item.precioUnitario.toFixed(2),
-                  status: "active",
-                },
-              });
-            }
+            const personalProduct = await resolvePersonalProductForSale(item);
+            const variantId = personalProductVariantId(personalProduct.id);
 
             return {
-              productId: "manual",
+              productId: personalProduct.id,
               variantId,
-              name: item.producto,
-              categoria: item.categoria ?? null,
+              name: personalProduct.name,
+              categoria: item.categoria ?? personalProduct.categoria,
               quantity: item.cantidad,
               price: item.precioUnitario.toFixed(2),
             };
@@ -399,6 +387,7 @@ export async function createPersonalSale(input: CreatePersonalSaleInput): Promis
   });
 
   const products = await prisma.product.findMany({ where: { storeId: PERSONAL_STORE_ID } });
+  const personalProducts = await prisma.personalProduct.findMany();
   const productByVariant = new Map(
     products.map((product) => [
       `${product.storeId}:${product.variantId}`,
@@ -409,6 +398,17 @@ export async function createPersonalSale(input: CreatePersonalSaleInput): Promis
       },
     ])
   );
+
+  for (const personalProduct of personalProducts) {
+    productByVariant.set(
+      `${PERSONAL_STORE_ID}:${personalProductVariantId(personalProduct.id)}`,
+      {
+        costoUnitario: personalProduct.costoUnitario,
+        categoria: personalProduct.categoria,
+        sku: null,
+      }
+    );
+  }
 
   return buildSaleSummary(order, productByVariant);
 }
