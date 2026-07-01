@@ -2,6 +2,7 @@ import { Router } from "express";
 import authRoutes from "./auth.routes";
 import ordersRoutes from "./orders.routes";
 import productsRoutes from "./products.routes";
+import salesRoutes from "./sales.routes";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.get("/health", (_req, res) => {
 router.use("/auth/tiendanube", authRoutes);
 router.use("/orders", ordersRoutes);
 router.use("/products", productsRoutes);
+router.use("/sales", salesRoutes);
 
 export default router;

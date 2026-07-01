@@ -1,14 +1,39 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import { listProducts, updateProductCost } from "../services/product.service";
+import {
+  listProducts,
+  syncProductPrices,
+  updateProductCost,
+} from "../services/product.service";
 
 const updateCostSchema = z.object({
   costoUnitario: z.number().nonnegative(),
 });
 
+const syncProductsSchema = z.object({
+  storeId: z.string().optional(),
+});
+
 export async function getProducts(_req: Request, res: Response): Promise<void> {
   const products = await listProducts();
   res.json({ data: products });
+}
+
+export async function syncProducts(req: Request, res: Response): Promise<void> {
+  const parsed = syncProductsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const summaries = await syncProductPrices({ storeId: parsed.data.storeId });
+    res.json({ data: summaries.length === 1 ? summaries[0] : summaries });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to sync product prices";
+    res.status(500).json({ error: message });
+  }
 }
 
 export async function patchProductCost(req: Request, res: Response): Promise<void> {

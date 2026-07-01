@@ -80,34 +80,34 @@ async function ensureProduct(
 ) {
   const productId = toStringId(item.product_id);
   const variantId = toStringId(item.variant_id);
-
-  const existing = await prisma.product.findUnique({
-    where: {
-      storeId_variantId: {
-        storeId,
-        variantId,
-      },
-    },
-  });
-
-  if (existing) {
-    return existing;
-  }
+  const precioVenta = toDecimalString(item.price);
 
   let sku = item.sku ?? null;
   if (!sku) {
     sku = await fetchVariantSku(storeId, accessToken, productId, variantId);
   }
 
-  return prisma.product.create({
-    data: {
+  return prisma.product.upsert({
+    where: {
+      storeId_variantId: {
+        storeId,
+        variantId,
+      },
+    },
+    create: {
       storeId,
       productId,
       variantId,
       sku,
       name: item.name,
+      precioVenta,
       costoUnitario: null,
       status: "pending_cost",
+    },
+    update: {
+      name: item.name,
+      sku,
+      precioVenta,
     },
   });
 }

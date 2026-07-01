@@ -23,7 +23,10 @@ model Product {
   variantId     String
   sku           String?
   name          String
+  categoria     String?
   costoUnitario Decimal? @db.Decimal(12, 2)
+  precioVenta   Decimal? @db.Decimal(12, 2)
+  activo        Boolean  @default(true)
   status        String   @default("pending_cost")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

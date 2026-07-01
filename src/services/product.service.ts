@@ -1,4 +1,11 @@
 import { prisma } from "../lib/prisma";
+import {
+  resolveCategoryLabel,
+  resolveProductName,
+  resolveVariantSalePrice,
+} from "../types/tiendanubeProduct";
+import { fetchCategoryMap } from "./tiendanube/category.service";
+import { fetchAllCatalogProducts } from "./tiendanube/product.service";
 
 export async function listProducts() {
   return prisma.product.findMany({
@@ -20,4 +27,119 @@ export async function updateProductCost(id: string, costoUnitario: number) {
       status: "active",
     },
   });
+}
+
+export interface SyncProductPricesResult {
+  storeId: string;
+  updated: number;
+  created: number;
+  skipped: number;
+  failed: number;
+  message: string;
+}
+
+export async function syncProductPrices(options?: {
+  storeId?: string;
+}): Promise<SyncProductPricesResult[]> {
+  const credentials = options?.storeId
+    ? await prisma.storeCredential.findMany({ where: { storeId: options.storeId } })
+    : await prisma.storeCredential.findMany();
+
+  if (credentials.length === 0) {
+    throw new Error("No store credentials found. Run OAuth install first.");
+  }
+
+  const summaries: SyncProductPricesResult[] = [];
+
+  for (const credential of credentials) {
+    const [catalogProducts, categoryMap] = await Promise.all([
+      fetchAllCatalogProducts(credential.storeId, credential.accessToken),
+      fetchCategoryMap(credential.storeId, credential.accessToken),
+    ]);
+
+    let updated = 0;
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const catalogProduct of catalogProducts) {
+      const productId = String(catalogProduct.id);
+      const productName = resolveProductName(catalogProduct.name);
+      const categoria = resolveCategoryLabel(catalogProduct.categories, categoryMap);
+      const activo = catalogProduct.published ?? true;
+      const variants = catalogProduct.variants ?? [];
+
+      for (const variant of variants) {
+        try {
+          const variantId = String(variant.id);
+          const precioVenta = resolveVariantSalePrice(variant);
+
+          if (!precioVenta) {
+            skipped += 1;
+            continue;
+          }
+
+          const sku =
+            typeof variant.sku === "string" && variant.sku.length > 0 ? variant.sku : null;
+
+          const existing = await prisma.product.findUnique({
+            where: {
+              storeId_variantId: {
+                storeId: credential.storeId,
+                variantId,
+              },
+            },
+          });
+
+          await prisma.product.upsert({
+            where: {
+              storeId_variantId: {
+                storeId: credential.storeId,
+                variantId,
+              },
+            },
+            create: {
+              storeId: credential.storeId,
+              productId,
+              variantId,
+              name: productName,
+              categoria,
+              sku,
+              precioVenta,
+              activo,
+              costoUnitario: null,
+              status: "pending_cost",
+            },
+            update: {
+              productId,
+              name: productName,
+              categoria,
+              sku,
+              precioVenta,
+              activo,
+            },
+          });
+
+          if (existing) {
+            updated += 1;
+          } else {
+            created += 1;
+          }
+        } catch {
+          failed += 1;
+        }
+      }
+    }
+
+    summaries.push({
+      storeId: credential.storeId,
+      updated,
+      created,
+      skipped,
+      failed,
+      message: "Precios sincronizados desde Tienda Nube",
+    });
+  }
+
+  return summaries;
 }
