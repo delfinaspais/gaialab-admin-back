@@ -31,6 +31,14 @@ export const tiendanubePaymentDetailsSchema = z
   })
   .passthrough();
 
+export const tiendanubeAddressSchema = z
+  .object({
+    name: z.string().optional(),
+    first_name: z.string().optional(),
+    last_name: z.string().optional(),
+  })
+  .passthrough();
+
 export const tiendanubeOrderSchema = z.object({
   id: z.union([z.string(), z.number()]),
   store_id: z.union([z.string(), z.number()]).optional(),
@@ -49,7 +57,9 @@ export const tiendanubeOrderSchema = z.object({
   payment_status: z.string(),
   created_at: z.string(),
   paid_at: z.string().nullable().optional(),
+  contact_name: z.string().nullable().optional(),
   billing_name: z.string().nullable().optional(),
+  shipping_address: tiendanubeAddressSchema.nullable().optional(),
   payment_details: tiendanubePaymentDetailsSchema.nullable().optional(),
   customer: z
     .object({

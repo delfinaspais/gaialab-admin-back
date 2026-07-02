@@ -33,22 +33,63 @@ function toDecimalString(value: string | number): string {
   return String(value);
 }
 
-function resolveCustomerName(order: TiendanubeOrder): string | null {
-  if (order.billing_name) {
-    return order.billing_name;
-  }
+const PLACEHOLDER_CUSTOMER_NAMES = new Set([
+  "no informado",
+  "não informado",
+  "nao informado",
+]);
 
-  const customer = order.customer;
-  if (!customer) {
+function normalizeCustomerName(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
     return null;
   }
 
-  if (customer.name) {
-    return customer.name;
+  if (PLACEHOLDER_CUSTOMER_NAMES.has(trimmed.toLowerCase())) {
+    return null;
   }
 
-  const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(" ").trim();
-  return fullName || null;
+  return trimmed;
+}
+
+function joinCustomerNames(...parts: Array<string | null | undefined>): string | null {
+  const name = parts
+    .map((part) => normalizeCustomerName(part))
+    .filter((part): part is string => !!part)
+    .join(" ")
+    .trim();
+
+  return name || null;
+}
+
+function resolveCustomerName(order: TiendanubeOrder): string | null {
+  const contactName = normalizeCustomerName(order.contact_name);
+  if (contactName) {
+    return contactName;
+  }
+
+  const shippingAddress = order.shipping_address;
+  const shippingName =
+    normalizeCustomerName(shippingAddress?.name) ??
+    joinCustomerNames(shippingAddress?.first_name, shippingAddress?.last_name);
+  if (shippingName) {
+    return shippingName;
+  }
+
+  const customer = order.customer;
+  if (customer) {
+    const customerFullName = joinCustomerNames(customer.first_name, customer.last_name);
+    if (customerFullName) {
+      return customerFullName;
+    }
+
+    const customerName = normalizeCustomerName(customer.name);
+    if (customerName) {
+      return customerName;
+    }
+  }
+
+  return normalizeCustomerName(order.billing_name);
 }
 
 function buildOrderPaymentFields(order: TiendanubeOrder, payment: OrderPaymentData) {
