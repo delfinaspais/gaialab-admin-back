@@ -12,10 +12,21 @@ export const tiendanubeProductVariantSchema = z.object({
   promotional_price: z.union([z.string(), z.number()]).nullable().optional(),
 });
 
+export const tiendanubeCategoryRefSchema = z.union([
+  z.string(),
+  z.number(),
+  z
+    .object({
+      id: z.union([z.string(), z.number()]),
+      name: localizedNameSchema.optional(),
+    })
+    .passthrough(),
+]);
+
 export const tiendanubeCatalogProductSchema = z.object({
   id: z.union([z.string(), z.number()]),
   name: localizedNameSchema,
-  categories: z.array(z.union([z.string(), z.number()])).optional(),
+  categories: z.array(tiendanubeCategoryRefSchema).optional(),
   published: z.boolean().optional(),
   variants: z.array(tiendanubeProductVariantSchema).optional(),
 });
@@ -31,6 +42,7 @@ export const tiendanubeCatalogProductsSchema = z.array(tiendanubeCatalogProductS
 
 export type TiendanubeCatalogProduct = z.infer<typeof tiendanubeCatalogProductSchema>;
 export type TiendanubeProductVariant = z.infer<typeof tiendanubeProductVariantSchema>;
+export type TiendanubeCategoryRef = z.infer<typeof tiendanubeCategoryRefSchema>;
 
 export function resolveProductName(name: z.infer<typeof localizedNameSchema>): string {
   if (typeof name === "string") {
@@ -54,15 +66,24 @@ export function resolveVariantSalePrice(variant: TiendanubeProductVariant): stri
 }
 
 export function resolveCategoryLabel(
-  categoryIds: Array<string | number> | undefined,
+  categories: TiendanubeCategoryRef[] | undefined,
   categoryMap: Map<string, string>
 ): string | null {
-  if (!categoryIds?.length) {
+  if (!categories?.length) {
     return null;
   }
 
-  const names = categoryIds
-    .map((id) => categoryMap.get(String(id)))
+  const names = categories
+    .map((category) => {
+      if (typeof category === "object" && category !== null && "id" in category) {
+        if (category.name) {
+          return resolveProductName(category.name);
+        }
+        return categoryMap.get(String(category.id)) ?? null;
+      }
+
+      return categoryMap.get(String(category)) ?? null;
+    })
     .filter((name): name is string => !!name);
 
   return names.length > 0 ? names.join(" / ") : null;

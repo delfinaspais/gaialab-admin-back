@@ -8,10 +8,42 @@ import { fetchCategoryMap } from "./tiendanube/category.service";
 import { fetchAllCatalogProducts } from "./tiendanube/product.service";
 
 export async function listProducts() {
-  return prisma.product.findMany({
+  const [storeProducts, personalProducts] = await Promise.all([
+    prisma.product.findMany({
+      where: { storeId: { not: PERSONAL_LEGACY_STORE_ID } },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.personalProduct.findMany({
+      where: { activo: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  const legacyPersonalProducts = await prisma.product.findMany({
+    where: { storeId: PERSONAL_LEGACY_STORE_ID },
     orderBy: { createdAt: "desc" },
   });
+
+  const mappedPersonalProducts = personalProducts.map((product) => ({
+    id: product.id,
+    storeId: PERSONAL_LEGACY_STORE_ID,
+    productId: "personal",
+    variantId: `personal-${product.id}`,
+    sku: null,
+    name: product.name,
+    categoria: product.categoria,
+    costoUnitario: product.costoUnitario,
+    precioVenta: product.precioVenta,
+    activo: product.activo,
+    status: product.costoUnitario ? "active" : "pending_cost",
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+  }));
+
+  return [...storeProducts, ...mappedPersonalProducts, ...legacyPersonalProducts];
 }
+
+const PERSONAL_LEGACY_STORE_ID = "personal";
 
 export async function updateProductCost(id: string, costoUnitario: number) {
   const product = await prisma.product.findUnique({ where: { id } });
@@ -73,11 +105,6 @@ export async function syncProductPrices(options?: {
         try {
           const variantId = String(variant.id);
           const precioVenta = resolveVariantSalePrice(variant);
-
-          if (!precioVenta) {
-            skipped += 1;
-            continue;
-          }
 
           const sku =
             typeof variant.sku === "string" && variant.sku.length > 0 ? variant.sku : null;

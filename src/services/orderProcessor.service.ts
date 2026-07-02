@@ -1,5 +1,8 @@
 import { prisma } from "../lib/prisma";
 import { mapOrderPaymentData, type OrderPaymentData } from "./orderPayment.mapper";
+import { resolveCategoryLabel } from "../types/tiendanubeProduct";
+import { fetchCategoryMap } from "./tiendanube/category.service";
+import { fetchCatalogProduct } from "./tiendanube/product.service";
 import { fetchAllPaidOrderIds, fetchOrder, fetchVariantSku } from "./tiendanube/order.service";
 import { fetchOrderTransactions } from "./tiendanube/transaction.service";
 import type { TiendanubeOrder, TiendanubeOrderProduct } from "../types/tiendanube";
@@ -74,10 +77,32 @@ function buildOrderPaymentFields(order: TiendanubeOrder, payment: OrderPaymentDa
   };
 }
 
+async function resolveProductCategory(
+  storeId: string,
+  accessToken: string,
+  productId: string,
+  categoryMap: Map<string, string>,
+  categoryCache: Map<string, string | null>
+): Promise<string | null> {
+  if (categoryCache.has(productId)) {
+    return categoryCache.get(productId) ?? null;
+  }
+
+  const catalogProduct = await fetchCatalogProduct(storeId, accessToken, productId);
+  const categoria = catalogProduct
+    ? resolveCategoryLabel(catalogProduct.categories, categoryMap)
+    : null;
+
+  categoryCache.set(productId, categoria);
+  return categoria;
+}
+
 async function ensureProduct(
   storeId: string,
   accessToken: string,
-  item: TiendanubeOrderProduct
+  item: TiendanubeOrderProduct,
+  categoryMap: Map<string, string>,
+  categoryCache: Map<string, string | null>
 ) {
   const productId = toStringId(item.product_id);
   const variantId = toStringId(item.variant_id);
@@ -87,6 +112,14 @@ async function ensureProduct(
   if (!sku) {
     sku = await fetchVariantSku(storeId, accessToken, productId, variantId);
   }
+
+  const categoria = await resolveProductCategory(
+    storeId,
+    accessToken,
+    productId,
+    categoryMap,
+    categoryCache
+  );
 
   return prisma.product.upsert({
     where: {
@@ -101,6 +134,7 @@ async function ensureProduct(
       variantId,
       sku,
       name: item.name,
+      categoria,
       precioVenta,
       costoUnitario: null,
       status: "pending_cost",
@@ -108,6 +142,7 @@ async function ensureProduct(
     update: {
       name: item.name,
       sku,
+      categoria,
       precioVenta,
     },
   });
@@ -118,9 +153,12 @@ async function buildOrderItems(
   accessToken: string,
   products: TiendanubeOrderProduct[]
 ) {
+  const categoryMap = await fetchCategoryMap(storeId, accessToken);
+  const categoryCache = new Map<string, string | null>();
+
   return Promise.all(
     products.map(async (item) => {
-      await ensureProduct(storeId, accessToken, item);
+      await ensureProduct(storeId, accessToken, item, categoryMap, categoryCache);
 
       let sku = item.sku ?? null;
       if (!sku) {

@@ -14,7 +14,19 @@ const syncProductsSchema = z.object({
   storeId: z.string().optional(),
 });
 
-export async function getProducts(_req: Request, res: Response): Promise<void> {
+export async function getProducts(req: Request, res: Response): Promise<void> {
+  const shouldSync = req.query.sync === "true";
+
+  if (shouldSync) {
+    try {
+      await syncProductPrices();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to sync products";
+      res.status(500).json({ error: message });
+      return;
+    }
+  }
+
   const products = await listProducts();
   res.json({ data: products });
 }

@@ -1,5 +1,9 @@
 import { createTiendanubeClient } from "./api.service";
-import { tiendanubeCatalogProductsSchema } from "../../types/tiendanubeProduct";
+import {
+  tiendanubeCatalogProductSchema,
+  tiendanubeCatalogProductsSchema,
+} from "../../types/tiendanubeProduct";
+import type { TiendanubeCatalogProduct } from "../../types/tiendanubeProduct";
 
 const PRODUCTS_PER_PAGE = 50;
 
@@ -17,6 +21,21 @@ export async function fetchCatalogProductsPage(
   });
 
   return tiendanubeCatalogProductsSchema.parse(response.data);
+}
+
+export async function fetchCatalogProduct(
+  storeId: string,
+  accessToken: string,
+  productId: string
+): Promise<TiendanubeCatalogProduct | null> {
+  const client = createTiendanubeClient(storeId, accessToken);
+
+  try {
+    const response = await client.get(`/products/${productId}`);
+    return tiendanubeCatalogProductSchema.parse(response.data);
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchAllCatalogProducts(storeId: string, accessToken: string) {
