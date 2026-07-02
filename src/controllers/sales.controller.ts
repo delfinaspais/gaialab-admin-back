@@ -5,6 +5,7 @@ import {
   createPersonalSale,
   getAvailableSaleMonths,
   listSales,
+  updatePersonalSale,
 } from "../services/sales.service";
 
 const canalSchema = z.enum(["tiendanube", "personal", "all"]);
@@ -75,6 +76,35 @@ export async function createPersonalSaleHandler(req: Request, res: Response): Pr
     res.status(201).json({ data: sale });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create personal sale";
+    res.status(500).json({ error: message });
+  }
+}
+
+export async function updatePersonalSaleHandler(req: Request, res: Response): Promise<void> {
+  const saleId = req.params.id;
+  if (typeof saleId !== "string") {
+    res.status(400).json({ error: "Invalid sale id" });
+    return;
+  }
+
+  const parsed = personalSaleSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const sale = await updatePersonalSale(saleId, parsed.data);
+
+    if (!sale) {
+      res.status(404).json({ error: "Personal sale not found" });
+      return;
+    }
+
+    res.json({ data: sale });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update personal sale";
     res.status(500).json({ error: message });
   }
 }

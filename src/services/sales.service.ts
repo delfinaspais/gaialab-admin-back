@@ -113,6 +113,64 @@ export interface CreatePersonalSaleInput {
   items: PersonalSaleItemInput[];
 }
 
+export type UpdatePersonalSaleInput = CreatePersonalSaleInput;
+
+async function buildProductByVariantMap() {
+  const products = await prisma.product.findMany({ where: { storeId: PERSONAL_STORE_ID } });
+  const personalProducts = await prisma.personalProduct.findMany();
+  const productByVariant = new Map(
+    products.map((product) => [
+      `${product.storeId}:${product.variantId}`,
+      {
+        costoUnitario: product.costoUnitario,
+        categoria: product.categoria,
+        sku: product.sku,
+      },
+    ])
+  );
+
+  for (const personalProduct of personalProducts) {
+    productByVariant.set(
+      `${PERSONAL_STORE_ID}:${personalProductVariantId(personalProduct.id)}`,
+      {
+        costoUnitario: personalProduct.costoUnitario,
+        categoria: personalProduct.categoria,
+        sku: null,
+      }
+    );
+  }
+
+  return productByVariant;
+}
+
+async function buildPersonalOrderItems(items: PersonalSaleItemInput[]) {
+  return Promise.all(
+    items.map(async (item) => {
+      const personalProduct = await resolvePersonalProductForSale(item);
+      const variantId = personalProductVariantId(personalProduct.id);
+
+      return {
+        productId: personalProduct.id,
+        variantId,
+        name: personalProduct.name,
+        categoria: item.categoria ?? personalProduct.categoria,
+        quantity: item.cantidad,
+        price: item.precioUnitario.toFixed(2),
+      };
+    })
+  );
+}
+
+function calculatePersonalSaleTotals(items: PersonalSaleItemInput[], descuento = 0) {
+  const subtotal = items.reduce(
+    (sum, item) => sum + item.precioUnitario * item.cantidad,
+    0
+  );
+  const total = Math.max(subtotal - descuento, 0);
+
+  return { subtotal, total };
+}
+
 function buildItemDetail(
   item: {
     id: string;
@@ -344,11 +402,7 @@ export async function createPersonalSale(input: CreatePersonalSaleInput): Promis
 
   const orderId = `P-${Date.now()}`;
   const descuento = input.descuento ?? 0;
-  const subtotal = input.items.reduce(
-    (sum, item) => sum + item.precioUnitario * item.cantidad,
-    0
-  );
-  const total = Math.max(subtotal - descuento, 0);
+  const { subtotal, total } = calculatePersonalSaleTotals(input.items, descuento);
 
   const order = await prisma.order.create({
     data: {
@@ -366,50 +420,61 @@ export async function createPersonalSale(input: CreatePersonalSaleInput): Promis
       orderDate,
       source: "personal",
       items: {
-        create: await Promise.all(
-          input.items.map(async (item) => {
-            const personalProduct = await resolvePersonalProductForSale(item);
-            const variantId = personalProductVariantId(personalProduct.id);
-
-            return {
-              productId: personalProduct.id,
-              variantId,
-              name: personalProduct.name,
-              categoria: item.categoria ?? personalProduct.categoria,
-              quantity: item.cantidad,
-              price: item.precioUnitario.toFixed(2),
-            };
-          })
-        ),
+        create: await buildPersonalOrderItems(input.items),
       },
     },
     include: { items: true },
   });
 
-  const products = await prisma.product.findMany({ where: { storeId: PERSONAL_STORE_ID } });
-  const personalProducts = await prisma.personalProduct.findMany();
-  const productByVariant = new Map(
-    products.map((product) => [
-      `${product.storeId}:${product.variantId}`,
-      {
-        costoUnitario: product.costoUnitario,
-        categoria: product.categoria,
-        sku: product.sku,
-      },
-    ])
-  );
+  const productByVariant = await buildProductByVariantMap();
+  return buildSaleSummary(order, productByVariant);
+}
 
-  for (const personalProduct of personalProducts) {
-    productByVariant.set(
-      `${PERSONAL_STORE_ID}:${personalProductVariantId(personalProduct.id)}`,
-      {
-        costoUnitario: personalProduct.costoUnitario,
-        categoria: personalProduct.categoria,
-        sku: null,
-      }
-    );
+export async function updatePersonalSale(
+  id: string,
+  input: UpdatePersonalSaleInput
+): Promise<SaleSummary | null> {
+  const existing = await prisma.order.findFirst({
+    where: { id, source: "personal" },
+  });
+
+  if (!existing) {
+    return null;
   }
 
+  const orderDate = new Date(input.fecha);
+  if (Number.isNaN(orderDate.getTime())) {
+    throw new Error("Invalid sale date");
+  }
+
+  const descuento = input.descuento ?? 0;
+  const { subtotal, total } = calculatePersonalSaleTotals(input.items, descuento);
+  const items = await buildPersonalOrderItems(input.items);
+
+  const order = await prisma.$transaction(async (tx) => {
+    await tx.orderItem.deleteMany({
+      where: { orderDbId: existing.id },
+    });
+
+    return tx.order.update({
+      where: { id: existing.id },
+      data: {
+        customerName: input.cliente,
+        subtotal: subtotal.toFixed(2),
+        discount: descuento.toFixed(2),
+        total: total.toFixed(2),
+        totalPaidByCustomer: input.cobrado === false ? null : total.toFixed(2),
+        paymentStatus: input.cobrado === false ? "pending" : "paid",
+        orderDate,
+        items: {
+          create: items,
+        },
+      },
+      include: { items: true },
+    });
+  });
+
+  const productByVariant = await buildProductByVariantMap();
   return buildSaleSummary(order, productByVariant);
 }
 
