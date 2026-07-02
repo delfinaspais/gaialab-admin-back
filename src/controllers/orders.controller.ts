@@ -21,6 +21,32 @@ export async function listOrders(_req: Request, res: Response): Promise<void> {
   res.json({ data: orders });
 }
 
+export async function getOrderById(req: Request, res: Response): Promise<void> {
+  const orderIdParam = req.params.orderId;
+  const orderId = typeof orderIdParam === "string" ? orderIdParam : undefined;
+  const storeId = typeof req.query.storeId === "string" ? req.query.storeId : undefined;
+
+  if (!orderId) {
+    res.status(400).json({ error: "Missing order id" });
+    return;
+  }
+
+  const order = await prisma.order.findFirst({
+    where: {
+      ...(storeId ? { storeId } : {}),
+      OR: [{ id: orderId }, { orderId }],
+    },
+    include: { items: true },
+  });
+
+  if (!order) {
+    res.status(404).json({ error: "Order not found" });
+    return;
+  }
+
+  res.json({ data: order });
+}
+
 export async function syncOrders(req: Request, res: Response): Promise<void> {
   const parsed = syncOrdersSchema.safeParse(req.body ?? {});
 

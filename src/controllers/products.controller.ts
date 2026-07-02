@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { z } from "zod";
 import {
+  listProductCategories,
   listProducts,
   syncProductPrices,
   updateProductCost,
@@ -31,6 +32,11 @@ export async function getProducts(req: Request, res: Response): Promise<void> {
   res.json({ data: products });
 }
 
+export async function getProductCategories(_req: Request, res: Response): Promise<void> {
+  const categories = await listProductCategories();
+  res.json({ data: categories });
+}
+
 export async function syncProducts(req: Request, res: Response): Promise<void> {
   const parsed = syncProductsSchema.safeParse(req.body ?? {});
 
@@ -41,6 +47,7 @@ export async function syncProducts(req: Request, res: Response): Promise<void> {
 
   try {
     const summaries = await syncProductPrices({ storeId: parsed.data.storeId });
+    res.setHeader("Cache-Control", "no-store");
     res.json({ data: summaries.length === 1 ? summaries[0] : summaries });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to sync product prices";
@@ -69,5 +76,6 @@ export async function patchProductCost(req: Request, res: Response): Promise<voi
     return;
   }
 
+  res.setHeader("Cache-Control", "no-store");
   res.json({ data: product });
 }

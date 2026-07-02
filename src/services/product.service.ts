@@ -7,6 +7,8 @@ import {
 import { fetchCategoryMap } from "./tiendanube/category.service";
 import { fetchAllCatalogProducts } from "./tiendanube/product.service";
 
+const PERSONAL_LEGACY_STORE_ID = "personal";
+
 export async function listProducts() {
   const [storeProducts, personalProducts] = await Promise.all([
     prisma.product.findMany({
@@ -43,7 +45,37 @@ export async function listProducts() {
   return [...storeProducts, ...mappedPersonalProducts, ...legacyPersonalProducts];
 }
 
-const PERSONAL_LEGACY_STORE_ID = "personal";
+export async function listProductCategories(): Promise<string[]> {
+  const [tnCategories, personalCategories] = await Promise.all([
+    prisma.product.findMany({
+      where: {
+        categoria: { not: null },
+        storeId: { not: PERSONAL_LEGACY_STORE_ID },
+      },
+      distinct: ["categoria"],
+      select: { categoria: true },
+    }),
+    prisma.personalProduct.findMany({
+      where: { categoria: { not: null }, activo: true },
+      distinct: ["categoria"],
+      select: { categoria: true },
+    }),
+  ]);
+
+  const categories = new Set<string>();
+  for (const row of tnCategories) {
+    if (row.categoria) {
+      categories.add(row.categoria);
+    }
+  }
+  for (const row of personalCategories) {
+    if (row.categoria) {
+      categories.add(row.categoria);
+    }
+  }
+
+  return Array.from(categories).sort((a, b) => a.localeCompare(b, "es"));
+}
 
 export async function updateProductCost(id: string, costoUnitario: number) {
   const product = await prisma.product.findUnique({ where: { id } });

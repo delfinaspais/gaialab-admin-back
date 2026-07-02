@@ -96,6 +96,30 @@ export interface ListSalesFilters {
   canal?: "tiendanube" | "personal" | "all";
 }
 
+export interface ListSalesOptions extends ListSalesFilters {
+  page?: number;
+  limit?: number;
+  export?: boolean;
+}
+
+export interface PaginatedSalesResult {
+  data: SaleSummary[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SalesStats {
+  totalVentas: number;
+  ventasPersonal: number;
+  ventasTiendaNube: number;
+  productosVendidos: number;
+  productosPersonal: number;
+  productosTiendaNube: number;
+  ingresoBruto: string;
+  ingresoNeto: string;
+}
+
 export interface PersonalSaleItemInput {
   productoId?: string;
   producto?: string;
@@ -283,8 +307,12 @@ function buildSaleSummary(
     }>;
     storeId: string;
   },
-  productByVariant: Map<string, { costoUnitario: { toString(): string } | null; categoria: string | null; sku: string | null }>
+  productByVariant: Map<string, { costoUnitario: { toString(): string } | null; categoria: string | null; sku: string | null }>,
+  options?: { includeItems?: boolean; includePago?: boolean }
 ): SaleSummary {
+  const includeItems = options?.includeItems ?? true;
+  const includePago = options?.includePago ?? true;
+
   const items = order.items.map((item) => {
     const product = productByVariant.get(`${order.storeId}:${item.variantId}`) ?? null;
     return buildItemDetail(item, product);
@@ -296,7 +324,7 @@ function buildSaleSummary(
     : null;
 
   const isTiendanube = order.source === "tiendanube";
-  const pago = isTiendanube ? buildTiendanubePaymentDetail(order) : null;
+  const pago = isTiendanube && includePago ? buildTiendanubePaymentDetail(order) : null;
 
   const totalPagado = toNumber(order.totalPaidByCustomer) ?? toNumber(order.total);
   const ingresoBruto = isTiendanube && totalPagado !== null ? totalPagado : ingresoItems;
@@ -335,7 +363,7 @@ function buildSaleSummary(
     paymentMethod: order.paymentMethod,
     paymentGateway: order.paymentGateway,
     pago,
-    items,
+    items: includeItems ? items : [],
   };
 }
 
@@ -354,21 +382,98 @@ function buildOrderDateFilter(mes?: string) {
   };
 }
 
-export async function listSales(filters?: ListSalesFilters): Promise<SaleSummary[]> {
+function buildSalesWhere(filters?: ListSalesFilters) {
   const canal = filters?.canal ?? "all";
   const orderDateFilter = buildOrderDateFilter(filters?.mes);
 
-  const orders = await prisma.order.findMany({
-    where: {
-      ...(canal !== "all" ? { source: canal } : {}),
-      ...(orderDateFilter ? { orderDate: orderDateFilter } : {}),
-    },
-    include: { items: true },
-    orderBy: { orderDate: "desc" },
-  });
+  return {
+    ...(canal !== "all" ? { source: canal } : {}),
+    ...(orderDateFilter ? { orderDate: orderDateFilter } : {}),
+  };
+}
 
-  const products = await prisma.product.findMany();
-  const personalProducts = await prisma.personalProduct.findMany();
+type OrderWithItems = {
+  id: string;
+  orderId: string;
+  orderDate: Date;
+  source: string;
+  storeId: string;
+  customerName: string | null;
+  subtotal: { toString(): string } | null;
+  shippingCost: { toString(): string } | null;
+  shippingCostOwner: { toString(): string } | null;
+  shippingMethod: string | null;
+  discount: { toString(): string } | null;
+  total: { toString(): string };
+  totalPaidByCustomer: { toString(): string } | null;
+  processingFee: { toString(): string } | null;
+  installmentsFee: { toString(): string } | null;
+  netTotal: { toString(): string } | null;
+  installments: number | null;
+  installmentsInterestFree: boolean | null;
+  cardBrand: string | null;
+  cardLastDigits: string | null;
+  transactionId: string | null;
+  currency: string | null;
+  paymentStatus: string;
+  paymentMethod: string | null;
+  paymentGateway: string | null;
+  items: Array<{
+    id: string;
+    name: string;
+    categoria: string | null;
+    quantity: number;
+    price: { toString(): string };
+    sku: string | null;
+    variantId: string;
+  }>;
+};
+
+async function buildProductByVariantMapForOrders(orders: OrderWithItems[]) {
+  const variantFilters = new Map<string, Set<string>>();
+
+  for (const order of orders) {
+    if (!variantFilters.has(order.storeId)) {
+      variantFilters.set(order.storeId, new Set());
+    }
+    for (const item of order.items) {
+      variantFilters.get(order.storeId)!.add(item.variantId);
+    }
+  }
+
+  const productOr: Array<{ storeId: string; variantId: string }> = [];
+  for (const [storeId, variantIds] of variantFilters) {
+    for (const variantId of variantIds) {
+      productOr.push({ storeId, variantId });
+    }
+  }
+
+  const products =
+    productOr.length > 0
+      ? await prisma.product.findMany({
+          where: { OR: productOr },
+        })
+      : [];
+
+  const personalIds = new Set<string>();
+  for (const order of orders) {
+    if (order.storeId !== PERSONAL_STORE_ID) {
+      continue;
+    }
+    for (const item of order.items) {
+      if (item.variantId.startsWith("personal-")) {
+        personalIds.add(item.variantId.slice("personal-".length));
+      }
+    }
+  }
+
+  const personalProducts =
+    personalIds.size > 0
+      ? await prisma.personalProduct.findMany({
+          where: { id: { in: Array.from(personalIds) } },
+        })
+      : [];
+
   const productByVariant = new Map(
     products.map((product) => [
       `${product.storeId}:${product.variantId}`,
@@ -391,7 +496,162 @@ export async function listSales(filters?: ListSalesFilters): Promise<SaleSummary
     );
   }
 
-  return orders.map((order) => buildSaleSummary(order, productByVariant));
+  return productByVariant;
+}
+
+function mapOrdersToSummaries(
+  orders: OrderWithItems[],
+  productByVariant: Map<string, { costoUnitario: { toString(): string } | null; categoria: string | null; sku: string | null }>,
+  options?: { includeItems?: boolean; includePago?: boolean }
+): SaleSummary[] {
+  return orders.map((order) => buildSaleSummary(order, productByVariant, options));
+}
+
+function computeIngresosFromOrderFields(order: {
+  source: string;
+  total: { toString(): string };
+  totalPaidByCustomer: { toString(): string } | null;
+  netTotal: { toString(): string } | null;
+  discount: { toString(): string } | null;
+  items: Array<{ quantity: number; price: { toString(): string } }>;
+}): { ingresoBruto: number; ingresoNeto: number } {
+  const ingresoItems = order.items.reduce(
+    (sum, item) => sum + (toNumber(item.price) ?? 0) * item.quantity,
+    0
+  );
+
+  const isTiendanube = order.source === "tiendanube";
+  const totalPagado = toNumber(order.totalPaidByCustomer) ?? toNumber(order.total);
+  const ingresoBruto = isTiendanube && totalPagado !== null ? totalPagado : ingresoItems;
+
+  const netTotal = toNumber(order.netTotal);
+  const descuento = toNumber(order.discount?.toString() ?? null) ?? 0;
+  const ingresoNeto =
+    isTiendanube && netTotal !== null ? netTotal : Math.max(ingresoBruto - descuento, 0);
+
+  return { ingresoBruto, ingresoNeto };
+}
+
+const orderWithItemsInclude = {
+  items: {
+    select: {
+      id: true,
+      name: true,
+      categoria: true,
+      quantity: true,
+      price: true,
+      sku: true,
+      variantId: true,
+    },
+  },
+} as const;
+
+export async function listSalesPaginated(options?: ListSalesOptions): Promise<PaginatedSalesResult> {
+  const where = buildSalesWhere(options);
+  const isExport = options?.export === true;
+  const page = Math.max(options?.page ?? 1, 1);
+  const limit = isExport ? undefined : Math.min(Math.max(options?.limit ?? 15, 1), 100);
+  const skip = isExport || limit === undefined ? undefined : (page - 1) * limit;
+
+  const [total, orders] = await Promise.all([
+    prisma.order.count({ where }),
+    prisma.order.findMany({
+      where,
+      include: orderWithItemsInclude,
+      orderBy: { orderDate: "desc" },
+      ...(skip !== undefined ? { skip, take: limit } : {}),
+    }),
+  ]);
+
+  const productByVariant = await buildProductByVariantMapForOrders(orders);
+  const includeItems = isExport;
+  const includePago = true;
+
+  return {
+    data: mapOrdersToSummaries(orders, productByVariant, { includeItems, includePago }),
+    total,
+    page: isExport ? 1 : page,
+    limit: isExport ? total : (limit ?? total),
+  };
+}
+
+export async function getSaleById(id: string): Promise<SaleSummary | null> {
+  const order = await prisma.order.findUnique({
+    where: { id },
+    include: orderWithItemsInclude,
+  });
+
+  if (!order) {
+    return null;
+  }
+
+  const productByVariant = await buildProductByVariantMapForOrders([order]);
+  return buildSaleSummary(order, productByVariant, { includeItems: true, includePago: true });
+}
+
+export async function getSalesStats(filters?: ListSalesFilters): Promise<SalesStats> {
+  const where = buildSalesWhere(filters);
+
+  const orders = await prisma.order.findMany({
+    where,
+    select: {
+      source: true,
+      total: true,
+      totalPaidByCustomer: true,
+      netTotal: true,
+      discount: true,
+      items: { select: { quantity: true, price: true } },
+    },
+  });
+
+  let ventasPersonal = 0;
+  let ventasTiendaNube = 0;
+  let productosPersonal = 0;
+  let productosTiendaNube = 0;
+  let ingresoBruto = 0;
+  let ingresoNeto = 0;
+
+  for (const order of orders) {
+    const units = order.items.reduce((sum, item) => sum + item.quantity, 0);
+    const { ingresoBruto: bruto, ingresoNeto: neto } = computeIngresosFromOrderFields(order);
+
+    ingresoBruto += bruto;
+    ingresoNeto += neto;
+
+    if (order.source === "personal") {
+      ventasPersonal += 1;
+      productosPersonal += units;
+    } else {
+      ventasTiendaNube += 1;
+      productosTiendaNube += units;
+    }
+  }
+
+  return {
+    totalVentas: orders.length,
+    ventasPersonal,
+    ventasTiendaNube,
+    productosVendidos: productosPersonal + productosTiendaNube,
+    productosPersonal,
+    productosTiendaNube,
+    ingresoBruto: ingresoBruto.toFixed(2),
+    ingresoNeto: ingresoNeto.toFixed(2),
+  };
+}
+
+export async function getAvailableSaleMonthsFromDb(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ month: string }>>`
+    SELECT DISTINCT to_char("orderDate" AT TIME ZONE 'UTC', 'YYYY-MM') AS month
+    FROM "Order"
+    ORDER BY month DESC
+  `;
+
+  return rows.map((row) => row.month);
+}
+
+export async function listSales(filters?: ListSalesFilters): Promise<SaleSummary[]> {
+  const result = await listSalesPaginated({ ...filters, export: true });
+  return result.data;
 }
 
 export async function createPersonalSale(input: CreatePersonalSaleInput): Promise<SaleSummary> {

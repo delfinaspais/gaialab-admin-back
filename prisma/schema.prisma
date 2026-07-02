@@ -34,6 +34,7 @@ model Product {
   @@unique([storeId, variantId])
   @@index([storeId])
   @@index([status])
+  @@index([categoria])
 }
 
 model PersonalProduct {
@@ -83,6 +84,8 @@ model Order {
   @@unique([storeId, orderId])
   @@index([storeId])
   @@index([orderDate])
+  @@index([source])
+  @@index([orderDate, source])
 }
 
 model OrderItem {

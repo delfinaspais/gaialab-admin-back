@@ -3,8 +3,10 @@ import { z } from "zod";
 import { syncPaidOrders } from "../services/orderProcessor.service";
 import {
   createPersonalSale,
-  getAvailableSaleMonths,
-  listSales,
+  getAvailableSaleMonthsFromDb,
+  getSaleById,
+  getSalesStats,
+  listSalesPaginated,
   updatePersonalSale,
 } from "../services/sales.service";
 
@@ -31,10 +33,57 @@ const personalSaleSchema = z.object({
   items: z.array(personalSaleItemSchema).min(1),
 });
 
-export async function getSales(req: Request, res: Response): Promise<void> {
+function parsePositiveInt(value: unknown, fallback: number): number {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseSalesQuery(req: Request) {
   const mes = typeof req.query.mes === "string" ? req.query.mes : undefined;
   const canalParam = typeof req.query.canal === "string" ? req.query.canal : "all";
   const canalParsed = canalSchema.safeParse(canalParam);
+  const isExport = req.query.export === "true" || req.query.limit === "0";
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = parsePositiveInt(req.query.limit, 15);
+
+  return { mes, canalParsed, isExport, page, limit };
+}
+
+export async function getSalesStatsHandler(req: Request, res: Response): Promise<void> {
+  const { mes, canalParsed } = parseSalesQuery(req);
+
+  if (!canalParsed.success) {
+    res.status(400).json({ error: "Invalid canal filter. Use tiendanube, personal or all." });
+    return;
+  }
+
+  const stats = await getSalesStats({ mes, canal: canalParsed.data });
+  res.json({ data: stats });
+}
+
+export async function getSaleByIdHandler(req: Request, res: Response): Promise<void> {
+  const saleId = req.params.id;
+  if (typeof saleId !== "string") {
+    res.status(400).json({ error: "Invalid sale id" });
+    return;
+  }
+
+  const sale = await getSaleById(saleId);
+
+  if (!sale) {
+    res.status(404).json({ error: "Sale not found" });
+    return;
+  }
+
+  res.json({ data: sale });
+}
+
+export async function getSales(req: Request, res: Response): Promise<void> {
+  const { mes, canalParsed, isExport, page, limit } = parseSalesQuery(req);
 
   if (!canalParsed.success) {
     res.status(400).json({ error: "Invalid canal filter. Use tiendanube, personal or all." });
@@ -51,14 +100,24 @@ export async function getSales(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const sales = await listSales({ mes, canal: canalParsed.data });
-  const allSales = await listSales();
+  const [result, meses] = await Promise.all([
+    listSalesPaginated({
+      mes,
+      canal: canalParsed.data,
+      page,
+      limit,
+      export: isExport,
+    }),
+    getAvailableSaleMonthsFromDb(),
+  ]);
 
   res.json({
-    data: sales,
+    data: result.data,
     meta: {
-      total: sales.length,
-      meses: getAvailableSaleMonths(allSales),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      meses,
     },
   });
 }
