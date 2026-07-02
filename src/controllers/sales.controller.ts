@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { z } from "zod";
+import { syncPaidOrders } from "../services/orderProcessor.service";
 import {
   createPersonalSale,
   getAvailableSaleMonths,
@@ -37,6 +38,16 @@ export async function getSales(req: Request, res: Response): Promise<void> {
   if (!canalParsed.success) {
     res.status(400).json({ error: "Invalid canal filter. Use tiendanube, personal or all." });
     return;
+  }
+
+  if (req.query.sync === "true") {
+    try {
+      await syncPaidOrders({ updateExisting: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to sync orders";
+      res.status(500).json({ error: message });
+      return;
+    }
   }
 
   const sales = await listSales({ mes, canal: canalParsed.data });
